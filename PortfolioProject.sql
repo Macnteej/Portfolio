@@ -64,41 +64,62 @@ JOIN CovidVacinationsUpdated vac
 WHERE dea.continent is not NULL
 ORDER BY 2,3
 
--- CTE population vs vaccination 
+-- Total vaccination percentage
+SELECT dea.Location, MAX(vac.new_vaccinations) AS TotalVaxxed
+FROM CovidDeathsUpdated dea 
+JOIN CovidVacinationsUpdated vac 
+    ON dea.Location = vac.location
+    AND dea.date = vac.date
+WHERE dea.continent is not NULL AND vac.new_vaccinations is not NULL
+GROUP BY dea.location
+
+-- CTE United States vs vaccination 
 WITH PopvsVax (Continent, Location, date, population, new_vaccinations, RollingVax)
 as
-(SELECT dea.continent, dea.Location, dea.date, dea.population, vac.new_vaccinations,
-SUM(cast(vac.new_vaccinations as int)) OVER (PARTITION BY dea.Location ORDER BY dea.Location, dea.date) as RollingVax
+(
+SELECT dea.continent, dea.Location, dea.date, dea.population, vac.new_vaccinations,
+SUM(cast(vac.new_vaccinations as decimal)) OVER (PARTITION BY dea.Location ORDER BY dea.Location, dea.date) as RollingVax
+FROM CovidDeathsUpdated dea 
+JOIN CovidVacinationsUpdated vac 
+    ON dea.Location = vac.location
+    AND dea.date = vac.date
+-- WHERE dea.continent is not NULL
+WHERE dea.Location = 'United States'
+)
+SELECT *, (CONVERT(decimal, RollingVax)/population)*100 as VacinnatedPopulation
+FROM PopvsVax
+-- Temp TABLE
+DROP TABLE IF EXISTS #PercentPopulationVaxxed
+CREATE TABLE #PercentPopulationVaxxed
+(
+    Continent NVARCHAR(255)
+    Location NVARCHAR(255)
+    date DATETIME
+    Population NUMERIC
+    new_vaccinations NUMERIC
+    RollingVax NUMERIC
+)
+
+INSERT INTO #PercentPopulationVaxxed
+SELECT dea.continent, dea.Location, dea.date, dea.population, vac.new_vaccinations,
+SUM(cast(vac.new_vaccinations as decimal)) OVER (PARTITION BY dea.Location ORDER BY dea.Location, dea.date) as RollingVax
 FROM CovidDeathsUpdated dea 
 JOIN CovidVacinationsUpdated vac 
     ON dea.Location = vac.location
     AND dea.date = vac.date
 WHERE dea.continent is not NULL
-)
-SELECT *, (RollingVax/population)*100 as VacinnatedPopulation
-FROM PopvsVax
 
--- Temp table for previous problem
-DROP TABLE IF EXISTS #VaccinatedPopulation
-CREATE TABLE #VaccinatedPopulation
-(
-    Continent NVARCHAR(255),
-    Location NVARCHAR (255),
-    Date datetime,
-    Population NUMERIC,
-    NewVaccinations NUMERIC,
-    VaccinatedPopulation NUMERIC
-)
+SELECT *, (CONVERT(decimal, RollingVax)/population)*100 as VacinnatedPopulation
+FROM #PercentPopulationVaxxed
 
-INSERT INTO #VaccinatedPopulation
-SELECT dea.continent, dea.Location, dea.date, dea.population, vac.new_vaccinations,
-SUM(CONVERT(int, vac.new_vaccinations)) OVER (PARTITION BY dea.Location ORDER BY dea.Location, dea.date) AS VaccinatedPopulation,
-(VaccinatedPopulation/population)*100
-From CovidDeathsUpdated dea
+-- Create view for Vizualization
+-- Comeback and make multiple
+CREATE VIEW PopulationVaxxed AS
+SELECT dea.Location, MAX(vac.new_vaccinations) AS TotalVaxxed
+FROM CovidDeathsUpdated dea 
 JOIN CovidVacinationsUpdated vac 
     ON dea.Location = vac.location
-    AND dea.date = vac.date 
+    AND dea.date = vac.date
+WHERE dea.continent is not NULL AND vac.new_vaccinations is not NULL
+GROUP BY dea.location
 
-
-SELECT *, (CAST(VaccinatedPopulation as decimal)/population)*100 as VaxxedPerentage
-FROM #VaccinatedPopulation
